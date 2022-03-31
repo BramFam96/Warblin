@@ -4,7 +4,7 @@ from flask import Flask, render_template, request, flash, redirect, session, g, 
 from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy.exc import IntegrityError
 
-from forms import UserAddForm, LoginForm, MessageForm
+from forms import UserAddForm, LoginForm, MessageForm, UserEditForm
 from models import db, connect_db, User, Message
 
 CURR_USER_KEY = "curr_user"
@@ -147,7 +147,6 @@ def users_show(user_id):
 
     user = User.query.get_or_404(user_id)
 
-    # snagging messages in order from the database;
     # user.messages won't be in order by default
     messages = (Message
                 .query
@@ -156,13 +155,14 @@ def users_show(user_id):
                 .limit(100)
                 .all())
     return render_template('users/show.html', user=user, messages=messages)
-
+###########################################################################
+#  New route for displaying likes
 @app.route('/users/<int:user_id>/likes')
 def show_likes(user_id):
     if g.user:
         user = User.query.get_or_404(user_id)
         return render_template('users/likes.html', user=user, likes = user.likes)
-
+###########################################################################
 @app.route('/users/<int:user_id>/following')
 def show_following(user_id):
     """Show list of people this user is following."""
@@ -220,9 +220,30 @@ def stop_following(follow_id):
 @app.route('/users/profile', methods=["GET", "POST"])
 def profile():
     """Update profile for current user."""
+    # Check for no global user
+    if not g.user:
+        flash('Access denied, please log in', 'danger')
+        return redirect('/')
 
-    # IMPLEMENT THIS
+    user = g.user
 
+    form = UserEditForm(obj=user)
+    
+    # Check for invalid form  
+    if not form.validate_on_submit():
+        return render_template('users/edit.html', form = form, user_id = user.id)
+    # Check for bad auth
+    if not User.authenticate(user.username, form.password.data):
+        flash('Invalid password', 'danger')
+        return render_template('users/edit.html', form=form, user_id = user.id)
+    # Else update user:
+    user.username = form.username.data
+    user.email = form.email.data
+    user.image_url = form.image_url.data or "/static/images/default-pic.png"
+    user.header_image_url = form.header_image_url.data or "/static/images/warbler-hero.jpg"
+    user.bio = form.bio.data
+    db.session.commit()    
+    return redirect(f'/users/{user.id}')
 
 @app.route('/users/delete', methods=["POST"])
 def delete_user():
