@@ -228,7 +228,7 @@ def profile():
     user = g.user
 
     form = UserEditForm(obj=user)
-    
+
     # Check for invalid form  
     if not form.validate_on_submit():
         return render_template('users/edit.html', form = form, user_id = user.id)
@@ -291,7 +291,7 @@ def messages_add():
 def messages_show(message_id):
     """Show a message."""
 
-    msg = Message.query.get(message_id)
+    msg = Message.query.get_or_404(message_id)
     return render_template('messages/show.html', message=msg)
 
 
@@ -303,7 +303,9 @@ def messages_destroy(message_id):
         flash("Access unauthorized.", "danger")
         return redirect("/")
 
-    msg = Message.query.get(message_id)
+    msg = Message.query.get_or_404(message_id)
+    if msg.id != g.user.id:
+        flash('You do not have permission to do this', 'danger')
     db.session.delete(msg)
     db.session.commit()
 
