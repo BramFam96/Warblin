@@ -34,7 +34,7 @@ class UserModelTestCase(TestCase):
     ### Setup and tear down blocks: ###
 
     def setUp(self):
-        """Create test client, add sample data."""
+        """Create test users, and client"""
         # Renew tables
         db.drop_all()
         db.create_all()

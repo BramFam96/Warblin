@@ -15,7 +15,7 @@ from models import db, connect_db, Message, User
 # before we import our app, since that will have already
 # connected to the database
 
-os.environ['DATABASE_URL'] = "postgresql:///warbler-test"
+os.environ['DATABASE_URL'] = "postgresql:///warbler_test"
 
 
 # Now we can import app
@@ -39,27 +39,29 @@ class MessageViewTestCase(TestCase):
     def setUp(self):
         """Create test client, add sample data."""
 
-        User.query.delete()
-        Message.query.delete()
+        db.drop_all()
+        db.create_all()
 
         self.client = app.test_client()
 
-        self.testuser = User.signup(username="testuser",
+        self.user = User.signup(username="test",
                                     email="test@test.com",
-                                    password="testuser",
+                                    password="test",
                                     image_url=None)
+        self.user_id = 8989
+        self.user.id = self.user_id
 
         db.session.commit()
 
     def test_add_message(self):
-        """Can use add a message?"""
+        """Can add a message?"""
 
         # Since we need to change the session to mimic logging in,
         # we need to use the changing-session trick:
 
         with self.client as c:
             with c.session_transaction() as sess:
-                sess[CURR_USER_KEY] = self.testuser.id
+                sess[CURR_USER_KEY] = self.user.id
 
             # Now, that session setting is saved, so we can have
             # the rest of ours test
@@ -71,3 +73,114 @@ class MessageViewTestCase(TestCase):
 
             msg = Message.query.one()
             self.assertEqual(msg.text, "Hello")
+
+    def test_add_no_session(self):
+        with self.client as c:
+            resp = c.post("/messages/new", data={"text": "Hello"}, follow_redirects=True)
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("Access unauthorized", str(resp.data))
+
+    def test_add_invalid_user(self):
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = 99222224 # user does not exist
+
+            resp = c.post("/messages/new", data={"text": "Hello"}, follow_redirects=True)
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("Access unauthorized", str(resp.data))
+    
+    def test_message_show(self):
+
+        m = Message(
+            id=1234,
+            text="a test message",
+            user_id=self.user_id
+        )
+        
+        db.session.add(m)
+        db.session.commit()
+
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = self.user.id
+            
+            m = Message.query.get(1234)
+
+            resp = c.get(f'/messages/{m.id}')
+
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn(m.text, str(resp.data))
+
+    def test_invalid_message_show(self):
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = self.user.id
+            
+            resp = c.get('/messages/99999999') # does not exist!
+
+            self.assertEqual(resp.status_code, 404)
+
+    def test_message_delete(self):
+
+        m = Message(
+            id=1234,
+            text="a test message",
+            user_id=self.user_id
+        )
+        db.session.add(m)
+        db.session.commit()
+
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = self.user.id
+
+            resp = c.post("/messages/1234/delete", follow_redirects=True)
+            self.assertEqual(resp.status_code, 200)
+
+            m = Message.query.get(1234)
+            self.assertIsNone(m)
+
+    def test_unauthorized_message_delete(self):
+
+        # A second user that will try to delete the message
+        u = User.signup(username="unauthorized-user",
+                        email="testtest@test.com",
+                        password="password",
+                        image_url=None)
+        u.id = 76543
+
+        #Message is owned by user
+        m = Message(
+            id=1234,
+            text="a test message",
+            user_id=self.user_id
+        )
+        db.session.add_all([u, m])
+        db.session.commit()
+        m = Message.query.get(m.id)
+        self.assertIsNotNone(m)
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = 76543
+
+            resp = c.post("/messages/1234/delete", follow_redirects=True)
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn('You do not have permission to do this', str(resp.data))
+
+    def test_message_delete_no_authentication(self):
+
+        m = Message(
+            id=1234,
+            text="a test message",
+            user_id=self.user_id
+        )
+        db.session.add(m)
+        db.session.commit()
+
+        with self.client as c:
+            resp = c.post("/messages/1234/delete", follow_redirects=True)
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn('Access unauthorized.', str(resp.data))
+
+            m = Message.query.get(1234)
+            self.assertIsNotNone(m)
