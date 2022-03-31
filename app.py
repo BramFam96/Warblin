@@ -112,9 +112,14 @@ def login():
 @app.route('/logout')
 def logout():
     """Handle logout of user."""
-
-    # IMPLEMENT THIS
-
+    if not g.user:
+        flash('Not logged in')
+        return redirect('/')
+        
+    do_logout()
+    flash(f'Goodbye {g.user.username}')
+    return redirect('/login')
+        
 
 ##############################################################################
 # General user routes:
